@@ -96,8 +96,8 @@ def getDataset(reader, phonemes):
             for image in _images:
                 images = np.vstack([images, image[np.newaxis, ...]])
                 labels = np.vstack([labels, oneHot(idx, len(phonemes))])
-        X.append(labels)
-        Y.append(images)
+        X.append(images)
+        Y.append(labels)
         print(len(X))
         print(len(Y))
         idx+=1
@@ -164,6 +164,8 @@ def readPhonemes(fname):
 #     np.save(f, Y)
 # print(len(Y))
 # print(Y[0])
-# x = np.load("Y.npy")
-# print(x)
-createNN()
+x = np.load("X.npy", allow_pickle=True)
+print(x)
+y = np.load("Y.npy", allow_pickle=True)
+print(y)
+model = createNN()
