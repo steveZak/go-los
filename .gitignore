@@ -3,9 +3,9 @@ py-los/X.npy
 py-los/Y.npy
 py-los/ah.jpg
 py-los/m.jpg
-py-los/model
-py-los/model2
-py-los/model3
+py-los/model/
+py-los/model2/
+py-los/model3/
 py-los/cool1.jpg
 py-los/cool2.jpg
 py-los/cool3.jpg
