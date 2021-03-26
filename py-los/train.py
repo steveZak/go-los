@@ -15,6 +15,9 @@ ARRAY_DIM = 6
 MOUTH_AR_THRESH = 0.2
 MOUTH_AR_CONSEC_FRAMES = 5
 
+physical_devices = tf.config.list_physical_devices('GPU') 
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
 # define class GoPixelSlice to map to:
 # C type struct { void *data; GoInt len; GoInt cap; }
 class GoPixelSlice(Structure):
@@ -122,28 +125,42 @@ def getDataset(phonemes):
 #     def __init__():
         
 
-def createNN(bs=1):
+def createNN(bs=50):
     model = models.Sequential()
     model.add(layers.Conv2D(bs, (3, 3), activation='relu', input_shape=(100, 200, 3)))
-    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.MaxPooling2D((3, 3)))
     model.add(layers.Conv2D(bs, (3, 3), activation='relu', input_shape=(100, 200, 3)))
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Conv2D(bs, (3, 3), activation='relu', input_shape=(100, 200, 3)))
-    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.MaxPooling2D((3, 3)))
+    # model.add(layers.Conv2D(bs, (3, 3), activation='relu', input_shape=(100, 200, 3)))
+    # model.add(layers.MaxPooling2D((3, 3)))
     model.add(layers.Flatten())
-    model.add(layers.Dense(300))
-    model.add(layers.Dense(40))
+    # model.add(layers.Dense(1000))
+    # model.add(layers.Dense(1000))
+    model.add(layers.Dense(500))
+    model.add(layers.Dense(40, activation="softmax"))
+    print(model.summary())
     return model
 
 def forward(model, X):
     return model(X)
 
 def backprop(model, X, Y):
-    Y_hat = forward(model, X)
-    loss = losses.BinaryCrossentropy()
+    # model.trainable_variables
+    # Y_hat = forward(model, X)
+    # loss = losses.MSE()
+    # opt = optimizers.Adam(learning_rate=0.005)
     opt = optimizers.Adam()
-    opt.minimize(loss)
-    return
+    # opt.minimize(loss)
+    with tf.GradientTape() as tape:
+        # training=True is only needed if there are layers with different
+        # behavior during training versus inference (e.g. Dropout).
+        predictions = model(X, training=True)
+        # loss = loss_object(Y, predictions)
+        # _loss = loss(Y, predictions)
+        _loss = losses.kullback_leibler_divergence(Y, predictions)
+    gradients = tape.gradient(_loss, model.trainable_variables)
+    opt.apply_gradients(zip(gradients, model.trainable_variables))
+    return _loss
     #backprop the model
 
 
@@ -176,31 +193,78 @@ def getShuffledIndices(y):
     random.shuffle(indices)
     return indices
 
+def testFrame(img):
+    model = tf.saved_model.load("model")
+    image = cv2.resize(img[100:2150, :, :], (640, 480))
+    pixs = np.ascontiguousarray(image[:,:, 1].reshape((image.shape[0], image.shape[1])))
+    pixs1 = pixs.flatten()
+    dets = process_frame(pixs1)
+    if len(dets)> 0:
+        mouth = cv2.resize(image[dets[16][0]-5:dets[15][0]+5, dets[14][1]-5:dets[17][1]+5], (200, 100))
+        cv2.imwrite('cool2.png', mouth)
+        y = forward(model, mouth[np.newaxis, ...].astype(np.float32))
+        return y
+    return None
 
+# build dataset
 # phonemes = readPhonemes("gatsby2resfinal.json")
 # print(phonemes.keys())
-# ['ah', 'b', 'aw', 't', 'hh', 'ae', 'f', 'w', 'ey', 'ih', 'iy', 'n', 'eh', 's', 'g', 'd', 'uw', 'y', 'ao', 'r', 'k', 'dh', 'm', 'ow', 'er', 'l', 'jh', 'oy', 'z', 'ay', 'v', 'sh', 'ng', 'aa', 'ch', 'th', 'p', 'zh', 'uh', 'sil']
+labels = ['ah', 'b', 'aw', 't', 'hh', 'ae', 'f', 'w', 'ey', 'ih', 'iy', 'n', 'eh', 's', 'g', 'd', 'uw', 'y', 'ao', 'r', 'k', 'dh', 'm', 'ow', 'er', 'l', 'jh', 'oy', 'z', 'ay', 'v', 'sh', 'ng', 'aa', 'ch', 'th', 'p', 'zh', 'uh', 'sil']
 # # reader = getReader()
 # X, Y = getDataset(phonemes)
 # with open('X.npy', 'wb') as f:
 #     np.save(f, X, allow_pickle=True)
 # with open('Y.npy', 'wb') as f:
 #     np.save(f, Y, allow_pickle=True)
-# print(len(Y))
-# print(Y[0])
+
+# train
 x = np.load("X.npy", allow_pickle=True)
-print(x[1].shape)
 y = np.load("Y.npy", allow_pickle=True)
-print(y[1].shape)
+# x = np.array([], dtype=np.float32).reshape(0, 100, 200, 3)
+# for i in range(len(_x)):
+#     x = np.stack(_x[i], axis=0)
+#     y = np.stack(_y[i], axis=0)
+x = np.concatenate(x, axis=0)
+y = np.concatenate(y, axis=0)
+rng_state = np.random.get_state()
+np.random.shuffle(x)
+np.random.set_state(rng_state)
+np.random.shuffle(y)
 model = createNN()
-print(model)
-out = forward(model, x[0][1].astype(np.float32)[np.newaxis, ...])
-indices = getShuffledIndices(y)
-print(indices[0:5])
-e = 0
-while e<20:
-    for i in range(len(indices)):
-        backprop(model, x[indices[i]][0][indices[i]][1], y[indices[i]][0][indices[i]][1])
-    e += 1
+# indices = getShuffledIndices(y)
+# print(indices[0:5])
+train_loss = tf.keras.metrics.Mean(name='train_loss')
+print(train_loss.result())
+print(x.shape)
+for e in range(10):
+    img = cv2.imread("m.jpg")
+    out = testFrame(img)
+    print(out)
+    print(labels[np.argmax(out)])
+
+    img = cv2.imread("ah.jpg")
+    out = testFrame(img)
+    print(out)
+    print(labels[np.argmax(out)])
+    # train_loss.reset_states()
+    for i in range(int(len(x)/50)):
+        # _loss = backprop(model, x[indices[i:i+50][0]][indices[i:i+50][1]].astype(np.float32), y[indices[i:i+50][0]][indices[i:i+50][1]].astype(np.float32))
+        _loss = backprop(model, x[i:i+50].astype(np.float32)/255.0, y[i:i+50].astype(np.float32))
+        # print(float(i)/len(indices))
+    train_loss(_loss)
+    print(train_loss.result())
+    # print(_loss)
+    print(e)
 # out = forward(model, x[0][0:5].astype(np.float32))
+model.save("model3")
+
+# predict
+img = cv2.imread("m.jpg")
+out = testFrame(img)
 print(out)
+print(labels[np.argmax(out)])
+
+img = cv2.imread("ah.jpg")
+out = testFrame(img)
+print(out)
+print(labels[np.argmax(out)])
