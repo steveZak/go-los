@@ -1,6 +1,4 @@
 *.MOV
 *.npy
 *.jpg
-model/
-model2/
-model3/
+py-los/model[0-9]
