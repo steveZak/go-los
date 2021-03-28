@@ -34,7 +34,7 @@ def makeVocabularyTree(fname):
             phonemes[i] = phonemes[i].split("_")[0]
         addPhoneme(vocab, phonemes, word)
     print(len(vocab.keys())) # only 38
-    with open("vocabulary_result.txt", 'w') as file:
+    with open("vocabulary_result.json", 'w') as file:
         json.dump(vocab, file, indent=2)
 
 

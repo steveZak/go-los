@@ -2,9 +2,11 @@ import json
 import os
 import cv2
 import random
+import math
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, losses, models, optimizers
+import matplotlib.pyplot as plt
 from ctypes import *
 
 pigo = cdll.LoadLibrary('./talkdet.so')
@@ -45,33 +47,20 @@ def process_frame(pixs):
         res = np.ndarray(buffer=buffarr, dtype=c_longlong,
                          shape=(MAX_NDETS, ARRAY_DIM,))
 
-        # The first value of the buffer aray represents the buffer length.
         dets_len = res[0][0]
-        # print(dets_len)
-        res = np.delete(res, 0, 0)  # delete the first element from the array
-
-        # We have to multiply the detection length with the total
-        # detection points(face, pupils and facial lendmark points), in total 18
+        res = np.delete(res, 0, 0)
         dets = list(res.reshape(-1, ARRAY_DIM))[0:dets_len*19]
         return dets
 
 def getImages(frame_bounds, frame_rate=30):
     frames = []
     filename = 'gatsby2.MOV'
-    # reader = imageio.get_reader(filename,  'ffmpeg')
     cap = cv2.VideoCapture(filename)
     j = 0
-    print(frame_bounds)
     for i in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))):
         # print(j)
         res, image = cap.read()
-        if i >= round(cv2.CAP_PROP_FPS*frame_bounds[j][0]) and i <= round(cv2.CAP_PROP_FPS*frame_bounds[j][1]):
-            # image = reader.get_data(i)
-            # res, image = cap.retrieve(flag=7)
-            # image = reader[i]
-            # break
-            # b,g,r = cv2.split(image)           # get b, g, r
-            # image = cv2.resize(cv2.merge([r,g,b])[190:1100, 0:1400, :], (640, 480))
+        if i >= math.ceil(cap.get(5)*frame_bounds[j][0])+1 and i <= math.floor(cap.get(5)*frame_bounds[j][1])-1:
             image = cv2.resize(image[190:1100, 0:1400, :], (640, 480))
             pixs = np.ascontiguousarray(image[:,:, 1].reshape((image.shape[0], image.shape[1])))
             pixs1 = pixs.flatten()
@@ -80,19 +69,15 @@ def getImages(frame_bounds, frame_rate=30):
                 mouth = cv2.resize(image[dets[16][0]-5:dets[15][0]+5, dets[14][1]-5:dets[17][1]+5], (200, 100))
                 cv2.imwrite('cool2.png', mouth)
                 frames.append(mouth)
-            print("time="+str(i/cv2.CAP_PROP_FPS))
-        if i >= round(cv2.CAP_PROP_FPS*frame_bounds[j][1]):
+            print("time = "+str(i/cap.get(5)))
+        if i >= math.floor(cap.get(5)*frame_bounds[j][1]):
             j+=1
             if j==len(frame_bounds):
                 return frames
-        if i==6400:
-            return frames
-            # print("time="+str(frame_bounds[j][1]))
     return frames
 
 def getReader():
     filename = 'gatsby2.MOV'
-    # reader = imageio.get_reader(filename,  'ffmpeg')
     reader = cv2.VideoCapture(filename)
     return reader
 
@@ -106,8 +91,6 @@ def getDataset(phonemes):
     idx = 0
     for phoneme in phonemes:
         print(phoneme)
-        print(len(phonemes[phoneme]))
-        # print(phoneme)
         images = np.array([], dtype=np.float32).reshape(0, 100, 200, 3)
         labels = np.array([], dtype=np.float32).reshape(0, len(phonemes.keys()))
         _images = getImages(phonemes[phoneme])
@@ -117,8 +100,6 @@ def getDataset(phonemes):
         X.append(images)
         Y.append(labels)
         idx+=1
-        # if idx>1:
-        #     break
     return X, Y
 
 # class CNN():
@@ -131,12 +112,11 @@ def createNN(bs=50):
     model.add(layers.MaxPooling2D((3, 3)))
     model.add(layers.Conv2D(bs, (3, 3), activation='relu', input_shape=(100, 200, 3)))
     model.add(layers.MaxPooling2D((3, 3)))
-    # model.add(layers.Conv2D(bs, (3, 3), activation='relu', input_shape=(100, 200, 3)))
-    # model.add(layers.MaxPooling2D((3, 3)))
     model.add(layers.Flatten())
-    # model.add(layers.Dense(1000))
-    # model.add(layers.Dense(1000))
-    model.add(layers.Dense(500))
+    model.add(layers.Dense(1000))
+    model.add(layers.Dense(1000))
+    model.add(layers.Dense(700))
+    # model.add(layers.Dense(300))
     model.add(layers.Dense(40, activation="softmax"))
     print(model.summary())
     return model
@@ -145,23 +125,13 @@ def forward(model, X):
     return model(X)
 
 def backprop(model, X, Y):
-    # model.trainable_variables
-    # Y_hat = forward(model, X)
-    # loss = losses.MSE()
-    # opt = optimizers.Adam(learning_rate=0.005)
     opt = optimizers.Adam()
-    # opt.minimize(loss)
     with tf.GradientTape() as tape:
-        # training=True is only needed if there are layers with different
-        # behavior during training versus inference (e.g. Dropout).
         predictions = model(X, training=True)
-        # loss = loss_object(Y, predictions)
-        # _loss = loss(Y, predictions)
         _loss = losses.kullback_leibler_divergence(Y, predictions)
     gradients = tape.gradient(_loss, model.trainable_variables)
     opt.apply_gradients(zip(gradients, model.trainable_variables))
     return _loss
-    #backprop the model
 
 
 def readPhonemes(fname):
@@ -185,13 +155,6 @@ def readPhonemes(fname):
     # phonemes.pop()
     return phonemes
 
-def getShuffledIndices(y):
-    indices = []
-    for i in range(len(y)):
-        for j in range(len(y[i])):
-            indices.append([i, j])
-    random.shuffle(indices)
-    return indices
 
 def testFrame(img):
     model = tf.saved_model.load("model")
@@ -206,9 +169,37 @@ def testFrame(img):
         return y
     return None
 
+
+def predictFromVideo(model_name, filename):
+    word = []
+    model = tf.saved_model.load(model_name)
+    cap = cv2.VideoCapture(filename)
+    j = 0
+    prev = None
+    for i in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))):
+        res, image = cap.read()
+        image = cv2.flip(cv2.resize(image[190:800, 0:1400, :], (640, 480)), 1)
+        cv2.imwrite('resized.png', image)
+        pixs = np.ascontiguousarray(image[:,:, 1].reshape((image.shape[0], image.shape[1])))
+        pixs1 = pixs.flatten()
+        dets = process_frame(pixs1)
+        print(len(dets))
+        if len(dets) > 0:
+            mouth = cv2.resize(image[dets[16][0]-5:dets[15][0]+5, dets[14][1]-5:dets[17][1]+5], (200, 100))
+            y = forward(model, mouth[np.newaxis, ...].astype(np.float32))
+            print(y)
+            res = labels[np.argmax(y)]
+            print(res)
+            cv2.imwrite('frame_predictions/' + res + str(i) + '.png', mouth)
+            if prev==None or (prev == res and word[-1] is not res):
+                word.append(res)
+            prev = res
+    return word
+
+
 # build dataset
-# phonemes = readPhonemes("gatsby2resfinal.json")
-# print(phonemes.keys())
+# phonemes = readPhonemes("gatsby2result.json")
+# # print(phonemes.keys())
 labels = ['ah', 'b', 'aw', 't', 'hh', 'ae', 'f', 'w', 'ey', 'ih', 'iy', 'n', 'eh', 's', 'g', 'd', 'uw', 'y', 'ao', 'r', 'k', 'dh', 'm', 'ow', 'er', 'l', 'jh', 'oy', 'z', 'ay', 'v', 'sh', 'ng', 'aa', 'ch', 'th', 'p', 'zh', 'uh', 'sil']
 # # reader = getReader()
 # X, Y = getDataset(phonemes)
@@ -218,53 +209,47 @@ labels = ['ah', 'b', 'aw', 't', 'hh', 'ae', 'f', 'w', 'ey', 'ih', 'iy', 'n', 'eh
 #     np.save(f, Y, allow_pickle=True)
 
 # train
-x = np.load("X.npy", allow_pickle=True)
-y = np.load("Y.npy", allow_pickle=True)
-# x = np.array([], dtype=np.float32).reshape(0, 100, 200, 3)
-# for i in range(len(_x)):
-#     x = np.stack(_x[i], axis=0)
-#     y = np.stack(_y[i], axis=0)
-x = np.concatenate(x, axis=0)
-y = np.concatenate(y, axis=0)
-rng_state = np.random.get_state()
-np.random.shuffle(x)
-np.random.set_state(rng_state)
-np.random.shuffle(y)
-model = createNN()
-# indices = getShuffledIndices(y)
-# print(indices[0:5])
-train_loss = tf.keras.metrics.Mean(name='train_loss')
-print(train_loss.result())
-print(x.shape)
-for e in range(10):
-    img = cv2.imread("m.jpg")
-    out = testFrame(img)
-    print(out)
-    print(labels[np.argmax(out)])
+# large model structure: 1000 / 1000 / 700
+# small model structure: 300
+# x = np.load("X.npy", allow_pickle=True)
+# y = np.load("Y.npy", allow_pickle=True)
+# x = np.concatenate(x, axis=0)
+# y = np.concatenate(y, axis=0)
+# rng_state = np.random.get_state()
+# np.random.shuffle(x)
+# np.random.set_state(rng_state)
+# np.random.shuffle(y)
+# model = createNN()
+# train_loss = tf.keras.metrics.Mean(name='train_loss')
+# print(train_loss.result())
+# for e in range(10):
+#     train_loss.reset_states()
+#     # img = cv2.imread("m.jpg")
+#     # out = testFrame(img)
+#     for i in range(int(len(x)/50)):
+#         _loss = backprop(model, x[i:i+50].astype(np.float32)/255.0, y[i:i+50].astype(np.float32))
+#         # print(float(i)/len(indices))
+#         train_loss(_loss)
+#     print(train_loss.result())
+#     plt.plot(e, train_loss.result(), 'ro')
+#     plt.show()
+#     # print(_loss)
+#     print(e)
+# model.save("model_small")
 
-    img = cv2.imread("ah.jpg")
-    out = testFrame(img)
-    print(out)
-    print(labels[np.argmax(out)])
-    # train_loss.reset_states()
-    for i in range(int(len(x)/50)):
-        # _loss = backprop(model, x[indices[i:i+50][0]][indices[i:i+50][1]].astype(np.float32), y[indices[i:i+50][0]][indices[i:i+50][1]].astype(np.float32))
-        _loss = backprop(model, x[i:i+50].astype(np.float32)/255.0, y[i:i+50].astype(np.float32))
-        # print(float(i)/len(indices))
-    train_loss(_loss)
-    print(train_loss.result())
-    # print(_loss)
-    print(e)
-# out = forward(model, x[0][0:5].astype(np.float32))
-model.save("model3")
 
 # predict
-img = cv2.imread("m.jpg")
-out = testFrame(img)
-print(out)
-print(labels[np.argmax(out)])
+# img = cv2.imread("m.jpg")
+# out = testFrame(img)
+# print(out)
+# print(labels[np.argmax(out)])
 
-img = cv2.imread("ah.jpg")
-out = testFrame(img)
-print(out)
-print(labels[np.argmax(out)])
+# img = cv2.imread("ah.jpg")
+# out = testFrame(img)
+# print(out)
+# print(labels[np.argmax(out)])
+
+
+#predict video
+word = predictFromVideo('model_large', 'example.MOV')
+print(word)
