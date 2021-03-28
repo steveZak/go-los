@@ -6,16 +6,13 @@ import math
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, losses, models, optimizers
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from ctypes import *
 
 pigo = cdll.LoadLibrary('./talkdet.so')
 
 MAX_NDETS = 2024
 ARRAY_DIM = 6
-
-MOUTH_AR_THRESH = 0.2
-MOUTH_AR_CONSEC_FRAMES = 5
 
 physical_devices = tf.config.list_physical_devices('GPU') 
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
@@ -67,7 +64,7 @@ def getImages(frame_bounds, frame_rate=30):
             dets = process_frame(pixs1)
             if len(dets)> 0:
                 mouth = cv2.resize(image[dets[16][0]-5:dets[15][0]+5, dets[14][1]-5:dets[17][1]+5], (200, 100))
-                cv2.imwrite('cool2.png', mouth)
+                # cv2.imwrite('cool2.png', mouth)
                 frames.append(mouth)
             print("time = "+str(i/cap.get(5)))
         if i >= math.floor(cap.get(5)*frame_bounds[j][1]):
@@ -110,7 +107,7 @@ def createNN(bs=50):
     model = models.Sequential()
     model.add(layers.Conv2D(bs, (3, 3), activation='relu', input_shape=(100, 200, 3)))
     model.add(layers.MaxPooling2D((3, 3)))
-    model.add(layers.Conv2D(bs, (3, 3), activation='relu', input_shape=(100, 200, 3)))
+    model.add(layers.Conv2D(bs, (3, 3), activation='relu'))
     model.add(layers.MaxPooling2D((3, 3)))
     model.add(layers.Flatten())
     model.add(layers.Dense(1000))
@@ -129,6 +126,7 @@ def backprop(model, X, Y):
     with tf.GradientTape() as tape:
         predictions = model(X, training=True)
         _loss = losses.kullback_leibler_divergence(Y, predictions)
+        # _loss = losses.sparse_categorical_crossentropy([np.argmax(y) for y in Y], predictions)
     gradients = tape.gradient(_loss, model.trainable_variables)
     opt.apply_gradients(zip(gradients, model.trainable_variables))
     return _loss
@@ -156,15 +154,15 @@ def readPhonemes(fname):
     return phonemes
 
 
-def testFrame(img):
-    model = tf.saved_model.load("model")
+def testFrame(model, img):
+    model = tf.saved_model.load(model)
     image = cv2.resize(img[100:2150, :, :], (640, 480))
     pixs = np.ascontiguousarray(image[:,:, 1].reshape((image.shape[0], image.shape[1])))
     pixs1 = pixs.flatten()
     dets = process_frame(pixs1)
     if len(dets)> 0:
         mouth = cv2.resize(image[dets[16][0]-5:dets[15][0]+5, dets[14][1]-5:dets[17][1]+5], (200, 100))
-        cv2.imwrite('cool2.png', mouth)
+        # cv2.imwrite('cool2.png', mouth)
         y = forward(model, mouth[np.newaxis, ...].astype(np.float32))
         return y
     return None
@@ -210,7 +208,7 @@ labels = ['ah', 'b', 'aw', 't', 'hh', 'ae', 'f', 'w', 'ey', 'ih', 'iy', 'n', 'eh
 
 # train
 # large model structure: 1000 / 1000 / 700
-# small model structure: 300
+# small model structure: 1000 / 1000 / 300
 # x = np.load("X.npy", allow_pickle=True)
 # y = np.load("Y.npy", allow_pickle=True)
 # x = np.concatenate(x, axis=0)
@@ -224,28 +222,24 @@ labels = ['ah', 'b', 'aw', 't', 'hh', 'ae', 'f', 'w', 'ey', 'ih', 'iy', 'n', 'eh
 # print(train_loss.result())
 # for e in range(10):
 #     train_loss.reset_states()
-#     # img = cv2.imread("m.jpg")
-#     # out = testFrame(img)
 #     for i in range(int(len(x)/50)):
 #         _loss = backprop(model, x[i:i+50].astype(np.float32)/255.0, y[i:i+50].astype(np.float32))
 #         # print(float(i)/len(indices))
 #         train_loss(_loss)
 #     print(train_loss.result())
-#     plt.plot(e, train_loss.result(), 'ro')
-#     plt.show()
 #     # print(_loss)
 #     print(e)
-# model.save("model_small")
+# model.save("model_large")
 
 
 # predict
 # img = cv2.imread("m.jpg")
-# out = testFrame(img)
+# out = testFrame("model_large", img)
 # print(out)
 # print(labels[np.argmax(out)])
 
 # img = cv2.imread("ah.jpg")
-# out = testFrame(img)
+# out = testFrame("model_large", img)
 # print(out)
 # print(labels[np.argmax(out)])
 
