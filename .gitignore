@@ -2,4 +2,7 @@
 *.npy
 *.jpg
 *.png
+py-los/model
+py-los/talkdet.py
 py-los/model[0-9]
+*.gitignore
