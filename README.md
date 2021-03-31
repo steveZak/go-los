@@ -1,7 +1,7 @@
 # go-los
 The mute video speech detection project
 
-The mute speech resconstruction is performed in 2 steps with a U-Net Encoder-Decoder type architecture.
+The mute speech resconstruction is performed in 2 steps with a Encoder-Decoder type architecture.
 
 Encoder
 
