@@ -1,21 +1,21 @@
 # go-los
 The mute video speech detection project
 
-The mute speech resconstruction is performed in 2 steps with a Encoder-Decoder type architecture.
+The mute speech reconstruction is performed in 2 steps with a Encoder-Decoder type architecture.
 
 Encoder
 
-- Frame-by-frame phoneme classification using a CNN (complete).
-- Utilising a CRNN architecture to achieve better accuracy (planned early April 2021)
+- Frame-by-frame phoneme classification using a CNN.
+- Utilizing a CRNN architecture to achieve better accuracy
 
 Decoder
 
-- Aligning the phoneme probabilities to words by incorporating semantic, POS and phoneme pattern matching (planned late April 2021).
+- Aligning the phoneme probabilities to words by incorporating semantic, POS and phoneme pattern matching.
 
 
 Results demonstration
 
-Building a web app for real-time mute video speech decoding (possibly late May).
+Building a web app for real-time mute video speech decoding.
 - Model will be run in Go using a Tensorflow binding
 - Aiming to achieve real-time performance
 
@@ -29,7 +29,7 @@ Encoder Challenges planned to be addressed:
 - Adaptation to different camera angles and mouth shapes and structure
 
 Unaddressed Encoder Challenges:
-- Adaptation to various accents and dialects (Requires compiling several pronunciations of the same word)
+- Adaptation to various accents and dialects (Requires compiling several pronunciations of the same word to compile the initial dataset for the transfer learning approach)
 
 ---
 
